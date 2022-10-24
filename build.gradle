@@ -1,0 +1,85 @@
+
+
+plugins {
+    id "com.diffplug.spotless" version "6.4.2" apply false
+    id 'scala'
+    id 'application'
+}
+
+description = "Tibber to Prometheus Demo"
+
+allprojects {
+    group = 'se.codingminds'
+    version = '1.0-SNAPSHOT'
+
+    apply plugin: 'com.diffplug.spotless'
+    apply plugin: 'scala'
+    apply plugin: 'checkstyle'
+
+    ext {
+        javaVersion = '1.8'
+        scalaBinaryVersion = '2.12'
+        log4jVersion = '2.12.1'
+        junitVersion = '4.13'
+    }
+
+    spotless {
+        format 'misc', {
+            target '*.gradle', '*.md', '.gitignore'
+
+            trimTrailingWhitespace()
+            indentWithSpaces(4)
+            endWithNewline()
+        }
+
+        scala {
+            scalafmt('2.7.5').configFile("${rootProject.projectDir}/.scalafmt.conf")
+        }
+    }
+
+    // declare where to find the dependencies of your project
+    repositories {
+        mavenCentral()
+    }
+
+    // common set of dependencies
+    dependencies {
+        implementation 'org.scala-lang:scala-library:2.12.17'
+        implementation "org.apache.logging.log4j:log4j-slf4j-impl:${log4jVersion}"
+        implementation "org.apache.logging.log4j:log4j-api:${log4jVersion}"
+        implementation "org.apache.logging.log4j:log4j-core:${log4jVersion}"
+        implementation 'org.eclipse.jetty.websocket:websocket-jetty-client:11.0.12'
+        implementation 'org.eclipse.jetty:jetty-client:11.0.12'
+        implementation 'com.typesafe.play:play-json_2.13:2.10.0-RC7'
+        implementation 'ch.qos.logback:logback-classic:1.4.4'
+        implementation 'io.prometheus:simpleclient:0.16.0'
+        implementation 'io.prometheus:simpleclient_hotspot:0.16.0'
+        implementation 'io.prometheus:simpleclient_httpserver:0.16.0'
+        implementation 'io.prometheus:simpleclient_pushgateway:0.16.0'
+    }
+
+    // add source dirs:
+    sourceSets {
+        main {
+            scala {
+                srcDirs = ['src/main/scala']
+            }
+        }
+        test {
+            scala {
+                srcDirs = ['src/test/scala']
+            }
+        }
+    }
+
+    jar {
+        manifest {
+            attributes 'Built-By': System.getProperty('user.name'),
+                    'Build-Jdk': System.getProperty('java.version')
+        }
+    }
+}
+
+application {
+    mainClass = 'se.codingminds.tibber.Test'
+}
