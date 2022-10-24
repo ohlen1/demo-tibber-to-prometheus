@@ -3,6 +3,8 @@ package se.codingminds.tibber
 import io.prometheus.client.{CollectorRegistry, Gauge}
 import io.prometheus.client.exporter.HTTPServer
 import org.eclipse.jetty.client.HttpClient
+import org.eclipse.jetty.client.util.StringRequestContent
+import org.eclipse.jetty.http.{HttpHeader, HttpMethod}
 import org.eclipse.jetty.websocket.api.Session
 import org.eclipse.jetty.websocket.api.annotations.{
   OnWebSocketClose,
@@ -14,6 +16,7 @@ import org.eclipse.jetty.websocket.api.annotations.{
 import org.eclipse.jetty.websocket.client.{ClientUpgradeRequest, WebSocketClient}
 import org.slf4j.{Logger, LoggerFactory}
 import play.api.libs.json.Json
+import se.codingminds.tibber.RequestPayloads.{connectionInitMessage, initMessage, subscribeMessage}
 
 import java.net.{InetSocketAddress, URI}
 import java.util.concurrent.TimeUnit
@@ -24,11 +27,16 @@ object Test {
   val collectorRegistry =
     CollectorRegistry.defaultRegistry
 
+  val log: Logger = LoggerFactory.getLogger(getClass.getName)
+
   def main(args: Array[String]): Unit = {
 
     setupPrometheus()
 
     val httpClient = new HttpClient
+    httpClient.start()
+    getSubscriptionUrl(httpClient)
+
     val webSocketClient = new WebSocketClient(httpClient)
     webSocketClient.setMaxTextMessageSize(8 * 1024)
     webSocketClient.start()
@@ -37,7 +45,7 @@ object Test {
     val upgradeRequest = new ClientUpgradeRequest
     upgradeRequest.setHeader(
       "Authorization",
-      s"Bearer ${Source.fromResource("token.secret").getLines.mkString}"
+      s"Bearer ${Source.fromResource("token.secret").getLines().mkString}"
     )
     upgradeRequest.setSubProtocols("graphql-transport-ws")
     upgradeRequest.setTimeout(20, TimeUnit.SECONDS)
@@ -47,15 +55,36 @@ object Test {
     var sessionPromise = webSocketClient.connect(MySocket, serverURI, upgradeRequest)
   }
 
+  def getSubscriptionUrl(httpClient: HttpClient): String = {
+    val response = httpClient
+      .newRequest("https://api.tibber.com/v1-beta/gql")
+      .method(HttpMethod.POST)
+      .headers(headers =>
+        headers
+          .put(
+            HttpHeader.AUTHORIZATION,
+            s"Bearer ${Source.fromResource("token.secret").getLines().mkString}"
+          )
+      )
+      .body(new StringRequestContent("application/json", initMessage))
+      .send()
+
+    val json = Json.parse(new String(response.getContent))
+    val subscriptionUrl =
+      (json \ "data" \ "viewer" \ "websocketSubscriptionUrl").as[String]
+    log.info(s"Got subscription URL: ${subscriptionUrl}")
+    subscriptionUrl
+  }
+
   def closeWebSocket(webSocketClient: WebSocketClient): Unit = {
     webSocketClient.stop()
-    println("WebSocket is now closed. Goodbye.")
+    log.info("WebSocket is now closed. Goodbye.")
   }
 
   def setupPrometheus(): Unit = {
     val address = new InetSocketAddress(9091)
     new HTTPServer(address, collectorRegistry, false)
-    println(s"Serving Prometheus metrics on port ${address.getPort}")
+    log.info(s"Serving Prometheus metrics on port ${address.getPort}")
   }
 }
 
@@ -63,31 +92,8 @@ object Test {
 object MySocket {
 
   val log: Logger = LoggerFactory.getLogger(getClass.getName)
-  val powerGauge = Gauge
-    .build()
-    .name("tibber_power_consumption")
-    .help("Tibber power consumption gauge")
-    .register();
 
   var session: Session = null
-  val connectionInitMessage =
-    s"""{
-        "type":"connection_init",
-        "payload":{
-          "token":"${Source.fromResource("token.secret").getLines.mkString}"
-         }
-        }"""
-
-  val subscribeMessage =
-    """{
-        "id":"93202458-a20d-4608-b3b6-b56c80662539",
-        "type":"subscribe",
-        "payload":{
-          "variables":{},
-          "extensions":{},
-          "query":"subscription {\n  liveMeasurement(homeId: \"ef7cc41b-d5b9-492d-adda-43eec97e217d\") {\n    power\n  }\n}"
-          }
-        }"""
 
   @OnWebSocketClose
   def onWebSocketClose(statusCode: Int, reason: String): Unit = {
@@ -120,8 +126,44 @@ object MySocket {
     val json = Json.parse(message)
     if ((json \ "type").as[String].equals("next")) {
       val power = (json \ "payload" \ "data" \ "liveMeasurement" \ "power").as[Int]
-      log.info(s"Power: ${power}")
-      powerGauge.set(power)
+      log.debug(s"Power: ${power}")
+      Metrics.currentPowerGauge.set(power)
+
+      val minPower = (json \ "payload" \ "data" \ "liveMeasurement" \ "minPower").as[Int]
+      log.debug(s"Min power: ${minPower}")
+
+      val maxPower = (json \ "payload" \ "data" \ "liveMeasurement" \ "maxPower").as[Int]
+      log.debug(s"Max power: ${maxPower}")
+
+      val avgPower = (json \ "payload" \ "data" \ "liveMeasurement" \ "averagePower").as[Double]
+      log.debug(s"Avg power: ${avgPower}")
+
+      val currentPhase1 = (json \ "payload" \ "data" \ "liveMeasurement" \ "currentL1").as[Double]
+      log.debug(s"Current P1: ${currentPhase1}")
+      Metrics.currentPhaseCurrent.labels("1").set(currentPhase1)
+
+      val currentPhase2 = (json \ "payload" \ "data" \ "liveMeasurement" \ "currentL2").as[Double]
+      log.debug(s"Current P2: ${currentPhase2}")
+      Metrics.currentPhaseCurrent.labels("2").set(currentPhase2)
+
+      val currentPhase3 = (json \ "payload" \ "data" \ "liveMeasurement" \ "currentL3").as[Double]
+      log.debug(s"Current P3: ${currentPhase3}")
+      Metrics.currentPhaseCurrent.labels("3").set(currentPhase3)
+
+      val voltagePhase1 =
+        (json \ "payload" \ "data" \ "liveMeasurement" \ "voltagePhase1").as[Double]
+      log.debug(s"Voltage P1: ${voltagePhase1}")
+      Metrics.currentPhaseVoltage.labels("1").set(voltagePhase1)
+
+      val voltagePhase2 =
+        (json \ "payload" \ "data" \ "liveMeasurement" \ "voltagePhase2").as[Double]
+      log.debug(s"Voltage P2: ${voltagePhase2}")
+      Metrics.currentPhaseVoltage.labels("2").set(voltagePhase2)
+
+      val voltagePhase3 =
+        (json \ "payload" \ "data" \ "liveMeasurement" \ "voltagePhase3").as[Double]
+      log.debug(s"Voltage P3: ${voltagePhase3}")
+      Metrics.currentPhaseVoltage.labels("3").set(voltagePhase3)
     }
   }
 
@@ -130,4 +172,55 @@ object MySocket {
     log.error("WebSocket Error: ")
     cause.printStackTrace(System.out)
   }
+}
+
+object Metrics {
+  val currentPowerGauge = Gauge
+    .build()
+    .name("tibber_current_power_consumption")
+    .help("Current power consumption gauge")
+    .register();
+
+  val currentPhaseCurrent = Gauge
+    .build()
+    .name("tibber_current_phase_current")
+    .labelNames("phase_no")
+    .help("Current phase current")
+    .register();
+
+  val currentPhaseVoltage = Gauge
+    .build()
+    .name("tibber_current_phase_voltage")
+    .labelNames("phase_no")
+    .help("Current phase votage")
+    .register();
+}
+
+object RequestPayloads {
+
+  val initMessage =
+    """
+    {
+      "query": "{\n  viewer {\n    websocketSubscriptionUrl\n  }\n}"
+    }
+    """
+
+  val connectionInitMessage =
+    s"""{
+        "type":"connection_init",
+        "payload":{
+          "token":"${Source.fromResource("token.secret").getLines().mkString}"
+         }
+        }"""
+
+  val subscribeMessage =
+    """{
+        "id":"93202458-a20d-4608-b3b6-b56c80662539",
+        "type":"subscribe",
+        "payload":{
+          "variables":{},
+          "extensions":{},
+          "query":"subscription {\n  liveMeasurement(homeId: \"ef7cc41b-d5b9-492d-adda-43eec97e217d\") {\n    power\n    minPower\n    maxPower\n    averagePower\n    currentL1\n    currentL2\n    currentL3\n    voltagePhase1\n    voltagePhase2\n    voltagePhase3\n  }\n}"
+          }
+        }"""
 }
