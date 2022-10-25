@@ -13,3 +13,11 @@ Simple app demonstrating how to consume Tibber GraphQL subscription endpoint usi
    ```
    ./gradle run
    ```
+   
+## References
+* [Tibber API](https://developer.tibber.com/docs/overview)
+* [Jetty WebSocket Client](https://www.eclipse.org/jetty/documentation/jetty-11/programming-guide/index.html#pg-client-websocket)
+* [Scala Play JSON](https://index.scala-lang.org/playframework/play-json)
+* [WebSocket Status Codes Cheat Sheet](https://kapeli.com/cheat_sheets/WebSocket_Status_Codes.docset/Contents/Resources/Documents/index)
+* [Prometheus Getting Started](https://prometheus.io/docs/prometheus/latest/getting_started/)
+* [Prometheus Client for Java](https://github.com/prometheus/client_java)
