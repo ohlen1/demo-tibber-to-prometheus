@@ -1,7 +1,6 @@
 
 
 plugins {
-    id "com.diffplug.spotless" version "6.4.2" apply false
     id 'scala'
     id 'application'
 }
@@ -12,7 +11,6 @@ allprojects {
     group = 'se.codingminds'
     version = '1.0-SNAPSHOT'
 
-    apply plugin: 'com.diffplug.spotless'
     apply plugin: 'scala'
     apply plugin: 'checkstyle'
 
@@ -21,20 +19,6 @@ allprojects {
         scalaBinaryVersion = '2.12'
         log4jVersion = '2.12.1'
         junitVersion = '4.13'
-    }
-
-    spotless {
-        format 'misc', {
-            target '*.gradle', '*.md', '.gitignore'
-
-            trimTrailingWhitespace()
-            indentWithSpaces(4)
-            endWithNewline()
-        }
-
-        scala {
-            scalafmt('2.7.5').configFile("${rootProject.projectDir}/.scalafmt.conf")
-        }
     }
 
     // declare where to find the dependencies of your project
